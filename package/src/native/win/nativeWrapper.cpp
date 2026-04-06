@@ -5859,6 +5859,35 @@ ELECTROBUN_EXPORT bool initCEF() {
     return success;
 }
 
+// Parse a CSS hex color string ("#rrggbb" or "#rrggbbaa") into COREWEBVIEW2_COLOR (A, R, G, B).
+// Returns false if parsing fails. Alpha defaults to 255 (fully opaque) when not provided.
+static bool parseHexColor(const std::string& hex, COREWEBVIEW2_COLOR& out) {
+    if (hex.empty() || hex[0] != '#') return false;
+    std::string digits = hex.substr(1);
+    if (digits.size() != 6 && digits.size() != 8) return false;
+    auto hexByte = [&](size_t pos) -> int {
+        char hi = digits[pos], lo = digits[pos + 1];
+        auto nibble = [](char c) -> int {
+            if (c >= '0' && c <= '9') return c - '0';
+            if (c >= 'a' && c <= 'f') return 10 + (c - 'a');
+            if (c >= 'A' && c <= 'F') return 10 + (c - 'A');
+            return -1;
+        };
+        int h = nibble(hi), l = nibble(lo);
+        if (h < 0 || l < 0) return -1;
+        return (h << 4) | l;
+    };
+    int r = hexByte(0), g = hexByte(2), b = hexByte(4);
+    if (r < 0 || g < 0 || b < 0) return false;
+    int a = (digits.size() == 8) ? hexByte(6) : 255;
+    if (a < 0) return false;
+    out.A = static_cast<BYTE>(a);
+    out.R = static_cast<BYTE>(r);
+    out.G = static_cast<BYTE>(g);
+    out.B = static_cast<BYTE>(b);
+    return true;
+}
+
 // Internal factory method for creating WebView2 instances
 static std::shared_ptr<WebView2View> createWebView2View(uint32_t webviewId,
                                                  HWND hwnd,
@@ -5875,7 +5904,8 @@ static std::shared_ptr<WebView2View> createWebView2View(uint32_t webviewId,
                                                  const char *electrobunPreloadScript,
                                                  const char *customPreloadScript,
                                                  bool transparent,
-                                                 bool sandbox) {
+                                                 bool sandbox,
+                                                 const std::string& backgroundColor) {
     // Check if WebView2 runtime is available
     LPWSTR versionInfo = nullptr;
     HRESULT result = GetAvailableCoreWebView2BrowserVersionString(nullptr, &versionInfo);
@@ -5907,7 +5937,7 @@ static std::shared_ptr<WebView2View> createWebView2View(uint32_t webviewId,
     view->customScript = customScript;
 
     // Create WebView2 on main thread
-    MainThreadDispatcher::dispatch_sync([view, urlString, x, y, width, height, hwnd, partitionStr, transparent]() {
+    MainThreadDispatcher::dispatch_sync([view, urlString, x, y, width, height, hwnd, partitionStr, transparent, backgroundColor]() {
         // Initialize COM for this thread
         HRESULT comResult = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
         if (FAILED(comResult) && comResult != RPC_E_CHANGED_MODE) {
@@ -5954,7 +5984,7 @@ static std::shared_ptr<WebView2View> createWebView2View(uint32_t webviewId,
         HWND parentHwnd = hwnd;
         
         auto environmentCompletedHandler = Callback<ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler>(
-            [view, container, x, y, width, height, transparent](HRESULT result, ICoreWebView2Environment* env) -> HRESULT {
+            [view, container, x, y, width, height, transparent, backgroundColor](HRESULT result, ICoreWebView2Environment* env) -> HRESULT {
                 if (FAILED(result)) {
                     char errorMsg[256];
                     sprintf_s(errorMsg, "ERROR: Failed to create WebView2 environment, HRESULT: 0x%08X", result);
@@ -5974,7 +6004,7 @@ static std::shared_ptr<WebView2View> createWebView2View(uint32_t webviewId,
                 
                 return env->CreateCoreWebView2Controller(targetHwnd,
                     Callback<ICoreWebView2CreateCoreWebView2ControllerCompletedHandler>(
-                        [view, container, x, y, width, height, env, transparent](HRESULT result, ICoreWebView2Controller* controller) -> HRESULT {
+                        [view, container, x, y, width, height, env, transparent, backgroundColor](HRESULT result, ICoreWebView2Controller* controller) -> HRESULT {
                             if (FAILED(result)) {
                                 char errorMsg[256];
                                 sprintf_s(errorMsg, "ERROR: Failed to create WebView2 controller, HRESULT: 0x%08X", result);
@@ -6014,14 +6044,20 @@ static std::shared_ptr<WebView2View> createWebView2View(uint32_t webviewId,
                             // Make sure the controller is visible
                             ctrl->put_IsVisible(TRUE);
 
-                            // Set transparent background if requested
-                            if (transparent) {
+                            // Set background color if requested
+                            if (transparent || !backgroundColor.empty()) {
                                 ComPtr<ICoreWebView2Controller2> ctrl2;
                                 HRESULT hr = ctrl->QueryInterface(IID_PPV_ARGS(&ctrl2));
                                 if (SUCCEEDED(hr) && ctrl2) {
-                                    // Set background color to transparent (0x00000000 = ARGB fully transparent)
-                                    COREWEBVIEW2_COLOR transparentColor = {0, 0, 0, 0}; // A, R, G, B
-                                    ctrl2->put_DefaultBackgroundColor(transparentColor);
+                                    COREWEBVIEW2_COLOR color = {0, 0, 0, 0}; // A, R, G, B (transparent)
+                                    bool shouldSet = true;
+                                    if (!transparent) {
+                                        // Parse user-supplied hex color; skip if invalid
+                                        shouldSet = parseHexColor(backgroundColor, color);
+                                    }
+                                    if (shouldSet) {
+                                        ctrl2->put_DefaultBackgroundColor(color);
+                                    }
                                 }
                             }
 
@@ -7093,11 +7129,13 @@ ELECTROBUN_EXPORT void shutdownApplication() {
 static struct {
     bool startTransparent;
     bool startPassthrough;
-} g_nextWebviewFlags = {false, false};
+    std::string backgroundColor;
+} g_nextWebviewFlags = {false, false, ""};
 
-ELECTROBUN_EXPORT void setNextWebviewFlags(bool startTransparent, bool startPassthrough) {
+ELECTROBUN_EXPORT void setNextWebviewFlags(bool startTransparent, bool startPassthrough, const char* backgroundColor) {
     g_nextWebviewFlags.startTransparent = startTransparent;
     g_nextWebviewFlags.startPassthrough = startPassthrough;
+    g_nextWebviewFlags.backgroundColor = backgroundColor ? std::string(backgroundColor) : "";
 }
 
 // Clean, elegant initWebview function - Windows version matching Mac pattern
@@ -7123,7 +7161,8 @@ ELECTROBUN_EXPORT AbstractView* initWebview(uint32_t webviewId,
     // Read and clear pre-set flags
     bool startTransparent = g_nextWebviewFlags.startTransparent;
     bool startPassthrough = g_nextWebviewFlags.startPassthrough;
-    g_nextWebviewFlags = {false, false};
+    std::string backgroundColor = g_nextWebviewFlags.backgroundColor;
+    g_nextWebviewFlags = {false, false, ""};
 
     // Serialize webview creation to avoid CEF/WebView2 conflicts
     std::lock_guard<std::mutex> lock(g_webviewCreationMutex);
@@ -7144,7 +7183,8 @@ ELECTROBUN_EXPORT AbstractView* initWebview(uint32_t webviewId,
         auto webview2View = createWebView2View(webviewId, hwnd, url, x, y, width, height, autoResize,
                                               partitionIdentifier, navigationCallback, webviewEventHandler,
                                               eventBridgeHandler, bunBridgeHandler, internalBridgeHandler,
-                                              electrobunPreloadScript, customPreloadScript, transparent, sandbox);
+                                              electrobunPreloadScript, customPreloadScript, transparent, sandbox,
+                                              backgroundColor);
         view = webview2View.get();
     }
 

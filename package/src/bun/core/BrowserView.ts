@@ -49,6 +49,9 @@ export type BrowserViewOptions<T = undefined> = {
 	startTransparent: boolean;
 	// Set passthrough on the AbstractView at creation (before first paint)
 	startPassthrough: boolean;
+	// backgroundColor: native WebView surface color to prevent white flashes during resize.
+	// Accepts CSS hex colors like "#0a0a0a" or "#0a0a0aff". No effect when transparent is true.
+	backgroundColor?: string | null;
 	// renderer:
 };
 
@@ -106,6 +109,7 @@ export class BrowserView<T extends RPCWithTransport = RPCWithTransport> {
 	sandbox: boolean = false;
 	startTransparent: boolean = false;
 	startPassthrough: boolean = false;
+	backgroundColor: string | null = null;
 	isRemoved: boolean = false;
 
 	constructor(options: Partial<BrowserViewOptions<T>> = defaultOptions) {
@@ -135,6 +139,7 @@ export class BrowserView<T extends RPCWithTransport = RPCWithTransport> {
 		this.sandbox = options.sandbox ?? false;
 		this.startTransparent = options.startTransparent ?? false;
 		this.startPassthrough = options.startPassthrough ?? false;
+		this.backgroundColor = options.backgroundColor || null;
 
 		BrowserViewMap[this.id] = this;
 		this.ptr = this.init() as Pointer;
@@ -176,6 +181,7 @@ export class BrowserView<T extends RPCWithTransport = RPCWithTransport> {
 			sandbox: this.sandbox,
 			startTransparent: this.startTransparent,
 			startPassthrough: this.startPassthrough,
+			backgroundColor: this.backgroundColor,
 			// transparent is looked up from parent window in native.ts
 		});
 	}

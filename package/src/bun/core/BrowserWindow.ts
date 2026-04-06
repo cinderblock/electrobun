@@ -41,6 +41,10 @@ export type WindowOptionsType<T = undefined> = {
 	// Use for untrusted content (remote URLs) to prevent malicious sites from
 	// accessing internal APIs, creating OOPIFs, or communicating with Bun
 	sandbox: boolean;
+	// backgroundColor: sets the native WebView surface color, preventing white flashes
+	// during resize on dark-themed apps. Accepts CSS hex colors like "#0a0a0a" or "#0a0a0aff".
+	// Has no effect when transparent is true (which uses a fully transparent surface).
+	backgroundColor?: string;
 };
 
 const defaultOptions: WindowOptionsType = {
@@ -126,6 +130,7 @@ export class BrowserWindow<T extends RPCWithTransport = RPCWithTransport> {
 	navigationRules: string | null = null;
 	// Sandbox mode disables RPC and only allows event emission (for untrusted content)
 	sandbox: boolean = false;
+	backgroundColor: string | null = null;
 	frame: {
 		x: number;
 		y: number;
@@ -155,6 +160,7 @@ export class BrowserWindow<T extends RPCWithTransport = RPCWithTransport> {
 		this.hidden = options.hidden ?? false;
 		this.navigationRules = options.navigationRules || null;
 		this.sandbox = options.sandbox ?? false;
+		this.backgroundColor = options.backgroundColor || null;
 
 		this.init(options);
 	}
@@ -239,6 +245,7 @@ export class BrowserWindow<T extends RPCWithTransport = RPCWithTransport> {
 			navigationRules: this.navigationRules,
 			sandbox: this.sandbox,
 			startPassthrough: this.passthrough,
+			backgroundColor: this.backgroundColor,
 		});
 
 		this.webviewId = webview.id;

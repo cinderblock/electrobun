@@ -234,6 +234,7 @@ export const native = (() => {
 				args: [
 					FFIType.bool, // startTransparent
 					FFIType.bool, // startPassthrough
+					FFIType.cstring, // backgroundColor (empty string means use default)
 				],
 				returns: FFIType.void,
 			},
@@ -1178,6 +1179,7 @@ const _ffiImpl = {
 			sandbox: boolean;
 			startTransparent: boolean;
 			startPassthrough: boolean;
+			backgroundColor?: string | null;
 		}): FFIType.ptr => {
 			const {
 				id,
@@ -1197,6 +1199,7 @@ const _ffiImpl = {
 				sandbox,
 				startTransparent,
 				startPassthrough,
+				backgroundColor,
 			} = params;
 
 			const parentWindow = BrowserWindow.getById(windowId);
@@ -1250,7 +1253,7 @@ window.__electrobunBunBridge = window.__electrobunBunBridge || window.webkit?.me
 			const customPreload = preload;
 
 			// Pre-set flags before initWebview (workaround for FFI param count limits)
-			native_.symbols.setNextWebviewFlags(startTransparent, startPassthrough);
+			native_.symbols.setNextWebviewFlags(startTransparent, startPassthrough, toCString(backgroundColor || ""));
 			const webviewPtr = native_.symbols.initWebview(
 				id,
 				windowPtr,
