@@ -6052,8 +6052,12 @@ static std::shared_ptr<WebView2View> createWebView2View(uint32_t webviewId,
                                     COREWEBVIEW2_COLOR color = {0, 0, 0, 0}; // A, R, G, B (transparent)
                                     bool shouldSet = true;
                                     if (!transparent) {
-                                        // Parse user-supplied hex color; skip if invalid
+                                        // Parse user-supplied hex color; silently skip if invalid
+                                        // (default white background will be used instead)
                                         shouldSet = parseHexColor(backgroundColor, color);
+                                        if (!shouldSet) {
+                                            ::log("WARNING: backgroundColor value could not be parsed — default background will be used");
+                                        }
                                     }
                                     if (shouldSet) {
                                         ctrl2->put_DefaultBackgroundColor(color);

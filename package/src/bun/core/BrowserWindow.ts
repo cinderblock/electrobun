@@ -44,6 +44,7 @@ export type WindowOptionsType<T = undefined> = {
 	// backgroundColor: sets the native WebView surface color, preventing white flashes
 	// during resize on dark-themed apps. Accepts CSS hex colors like "#0a0a0a" or "#0a0a0aff".
 	// Has no effect when transparent is true (which uses a fully transparent surface).
+	// Invalid color values are silently ignored and the default white background is used.
 	backgroundColor?: string;
 };
 
